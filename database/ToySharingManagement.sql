@@ -211,12 +211,28 @@ BEGIN
         RETURN;
     END
 
-    IF EXISTS (SELECT 1 FROM inserted WHERE borrower_id = owner_id)
+    -- Kiểm tra tự mượn dựa trên CHỦ THẬT của toy_id (toys.owner_id), không dựa vào owner_id
+    -- app gửi lên - vì nếu app lỡ gửi sai owner_id, check dựa trên giá trị đó sẽ bị qua mặt.
+    IF EXISTS (
+        SELECT 1 FROM inserted i
+        JOIN toys t ON t.toy_id = i.toy_id
+        WHERE i.borrower_id = t.owner_id
+    )
     BEGIN
         RAISERROR (N'Không thể tự mượn đồ chơi của chính mình', 16, 1);
         ROLLBACK TRANSACTION;
         RETURN;
     END
+
+    -- owner_id là dữ liệu denormalize (copy từ toys.owner_id) để đỡ join khi query.
+    -- KHÔNG tin owner_id do tầng ứng dụng gửi lên — luôn đồng bộ lại đúng chủ thật của toy_id,
+    -- tránh trường hợp code Java gửi sai owner_id làm giao dịch ghi nhận nhầm chủ sở hữu.
+    UPDATE br
+    SET owner_id = t.owner_id
+    FROM borrow_requests br
+    JOIN inserted i ON br.request_id = i.request_id
+    JOIN toys t ON t.toy_id = i.toy_id
+    WHERE br.owner_id <> t.owner_id;
 END;
 GO
 
@@ -366,8 +382,7 @@ BEGIN
     WHERE i.status = 'LOCKED' AND d.status = 'ACTIVE' AND t.status = 'AVAILABLE';
 
     UPDATE u SET updated_at = GETDATE()
-    FROM users u JOIN inserted i ON u.user_id = i.user_id
-    WHERE u.updated_at <> GETDATE();
+    FROM users u JOIN inserted i ON u.user_id = i.user_id;
 END;
 GO
 
@@ -395,10 +410,3 @@ INSERT INTO toys (owner_id, category_id, toy_name, description, age_range, condi
 (3, 2, N'Bộ Lego Classic 500 mảnh',     N'Đầy đủ mảnh, có hộp',   N'5-10 tuổi','GOOD', 'AVAILABLE');
 GO
 
--- Ví dụ test luồng mượn/trả (chạy tay để kiểm tra trigger):
--- INSERT INTO borrow_requests (toy_id, borrower_id, owner_id, borrow_date, expected_return_date)
--- VALUES (1, 4, 2, '2026-08-15', '2026-08-20');
---
--- UPDATE borrow_requests SET status = 'APPROVED'  WHERE request_id = 1;  -- toy 1 tự chuyển BORROWED
--- UPDATE borrow_requests SET status = 'BORROWING' WHERE request_id = 1;
--- UPDATE borrow_requests SET status = 'RETURNED'  WHERE request_id = 1;  -- toy 1 tự chuyển lại AVAILABLE

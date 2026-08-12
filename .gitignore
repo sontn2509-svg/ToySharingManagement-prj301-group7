@@ -1,1 +1,27 @@
-/target/
+# Target directory (Maven output)
+target/
+*.war
+*.jar
+
+# NetBeans IDE
+build/
+dist/
+nbproject/private/
+nbproject/project.xml.ui*
+nbproject/build-impl.xml
+nbproject/profiler-build-impl.xml
+
+# IntelliJ IDEA
+.idea/
+*.iws
+*.iml
+*.ipr
+
+# Eclipse IDE
+.settings/
+.classpath
+.project
+
+# OS / System Files
+.DS_Store
+Thumbs.db
